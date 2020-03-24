@@ -2,6 +2,7 @@ import React from 'react';
 import { API, graphqlOperation } from 'aws-amplify';
 import { withAuthenticator } from 'aws-amplify-react';
 import { createNote } from './graphql/mutations';
+import { listNotes } from './graphql/queries';
 
 class App extends React.Component {
   state = {
@@ -9,19 +10,29 @@ class App extends React.Component {
     notes: []
   };
 
+  async componentDidMount() {
+    const result = await API.graphql(graphqlOperation(listNotes));
+    this.setState({ notes: result.data.listNotes.items });
+  }
+
   handleChangeNote = event => {
     this.setState({ note: event.target.value });
   };
-  handleAddNote = event => {
-    const { note } = this.state;
+  handleAddNote = async event => {
+    const { note, notes } = this.state;
     event.preventDefault();
     const input = {
       note: note
     };
-    API.graphql(graphqlOperation(createNote, { input: input }));
+    const result = await API.graphql(
+      graphqlOperation(createNote, { input: input })
+    );
+    const newNote = result.data.createNote;
+    const updatedNotes = [newNote, ...notes];
+    this.setState({ notes: updatedNotes, note: '' });
   };
   render() {
-    const { notes } = this.state;
+    const { note, notes } = this.state;
 
     return (
       <div className="flex flex-column items-center justify-center pa3 bg-washed-red">
@@ -33,6 +44,7 @@ class App extends React.Component {
             className="pa2 f4"
             placeholder="Write your note"
             onChange={this.handleChangeNote}
+            value={note}
           />
           <button className="pa2 f4" type="submit">
             Add Note
