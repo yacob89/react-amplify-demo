@@ -1,8 +1,13 @@
 import React from 'react';
-import { API, graphqlOperation } from 'aws-amplify';
+import { API, graphqlOperation, Auth } from 'aws-amplify';
 import { withAuthenticator } from 'aws-amplify-react';
 import { createNote, deleteNote, updateNote } from './graphql/mutations';
 import { listNotes } from './graphql/queries';
+import {
+  onCreateNote,
+  onDeleteNote,
+  onUpdateNote
+} from './graphql/subscriptions';
 
 class App extends React.Component {
   state = {
@@ -12,15 +17,74 @@ class App extends React.Component {
   };
 
   async componentDidMount() {
-    const result = await API.graphql(graphqlOperation(listNotes));
-    this.setState({ notes: result.data.listNotes.items });
+    this.getNotes();
+
+    this.createNoteListener = API.graphql(
+      graphqlOperation(onCreateNote, {
+        owner: (await Auth.currentAuthenticatedUser()).username
+      })
+    ).subscribe({
+      next: noteData => {
+        const newNote = noteData.value.data.onCreateNote;
+        const prevNotes = this.state.notes.filter(
+          note => note.id !== newNote.id
+        );
+        this.setState({ notes: [...prevNotes, newNote] });
+      }
+    });
+
+    this.createDeleteListener = API.graphql(
+      graphqlOperation(onDeleteNote, {
+        owner: (await Auth.currentAuthenticatedUser()).username
+      })
+    ).subscribe({
+      next: noteData => {
+        const deletedNote = noteData.value.data.onDeleteNote;
+        const updatedNotes = this.state.notes.filter(
+          note => note.id !== deletedNote.id
+        );
+        this.setState({ notes: updatedNotes });
+      }
+    });
+
+    this.createUpdateListener = API.graphql(
+      graphqlOperation(onUpdateNote, {
+        owner: (await Auth.currentAuthenticatedUser()).username
+      })
+    ).subscribe({
+      next: noteData => {
+        const updatedNote = noteData.value.data.onUpdateNote;
+        const index = this.state.notes.findIndex(
+          note => note.id === updatedNote.id
+        );
+        const updatedNotes = this.state.notes;
+        updatedNotes.splice(index, 1, updatedNote);
+        this.setState({ notes: updatedNotes, note: '', id: '' });
+      }
+    });
   }
+
+  componentWillUnmount() {
+    this.createNoteListener.unsubscribe();
+    this.createDeleteListener.unsubscribe();
+    this.createUpdateListener.unsubscribe();
+  }
+
+  getNotes = async () => {
+    try {
+      const result = await API.graphql(graphqlOperation(listNotes));
+      console.log(result);
+      this.setState({ notes: result.data.listNotes.items });
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
   handleChangeNote = event => {
     this.setState({ note: event.target.value });
   };
   handleAddNote = async event => {
-    const { note, notes } = this.state;
+    const { note } = this.state;
     event.preventDefault();
     // Check if we have existing note, if so update it
     if (this.hasExistingNote()) {
@@ -30,43 +94,57 @@ class App extends React.Component {
       const input = {
         note: note
       };
-      const result = await API.graphql(
+      await API.graphql(graphqlOperation(createNote, { input: input }));
+      // Commented out because alternatively we can use GraphQL Subscription
+      /* const result = await API.graphql(
         graphqlOperation(createNote, { input: input })
       );
+
       const newNote = result.data.createNote;
       const updatedNotes = [newNote, ...notes];
-      this.setState({ notes: updatedNotes, note: '' });
+      this.setState({ notes: updatedNotes, note: '' }); */
+      this.setState({ note: '' });
     }
   };
   handleUpdateNote = async () => {
-    const { notes, id, note } = this.state;
+    const { id, note } = this.state;
     const input = { id, note };
-    const result = await API.graphql(
+    await API.graphql(graphqlOperation(updateNote, { input: input }));
+
+    // Blocked comments because of graphQL Subscription
+    /* const result = await API.graphql(
       graphqlOperation(updateNote, { input: input })
     );
     const updatedNote = result.data.updateNote;
-    const index = notes.findIndex(note => note.id === updatedNote.id);
+    const index = notes.findIndex(note => note.id === updatedNote.id); */
+
+    // Code that hard to understand, not recommended to use
     /* const updatedNotes = [
       ...notes.slice(0, index),
       updatedNote,
       ...notes.slice(index + 1)
     ]; */
-    const updatedNotes = notes;
+
+    /* const updatedNotes = notes;
     updatedNotes.splice(index, 1, updatedNote);
-    this.setState({ notes: updatedNotes, note: '', id: '' });
+    this.setState({ notes: updatedNotes, note: '', id: '' }); */
   };
   handleSetNote = ({ note, id }) => {
     this.setState({ note: note, id: id });
   };
   handleDeleteNote = async noteId => {
-    const { notes } = this.state;
+    // Commented because we can use graphQL subcribe
+    /* const { notes } = this.state;
     const input = { id: noteId };
     const result = await API.graphql(
       graphqlOperation(deleteNote, { input: input })
     );
     const deletedNoteId = result.data.deleteNote.id;
     const updatedNotes = notes.filter(note => note.id !== deletedNoteId);
-    this.setState({ notes: updatedNotes });
+    this.setState({ notes: updatedNotes }); */
+
+    const input = { id: noteId };
+    await API.graphql(graphqlOperation(deleteNote, { input: input }));
   };
   hasExistingNote = () => {
     // Check if we have existing note to update, return true/false
