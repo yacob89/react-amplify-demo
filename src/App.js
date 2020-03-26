@@ -1,11 +1,12 @@
 import React from 'react';
 import { API, graphqlOperation } from 'aws-amplify';
 import { withAuthenticator } from 'aws-amplify-react';
-import { createNote } from './graphql/mutations';
+import { createNote, deleteNote, updateNote } from './graphql/mutations';
 import { listNotes } from './graphql/queries';
 
 class App extends React.Component {
   state = {
+    id: '',
     note: '',
     notes: []
   };
@@ -21,18 +22,64 @@ class App extends React.Component {
   handleAddNote = async event => {
     const { note, notes } = this.state;
     event.preventDefault();
-    const input = {
-      note: note
-    };
+    // Check if we have existing note, if so update it
+    if (this.hasExistingNote()) {
+      console.log('Note Updated');
+      this.handleUpdateNote();
+    } else {
+      const input = {
+        note: note
+      };
+      const result = await API.graphql(
+        graphqlOperation(createNote, { input: input })
+      );
+      const newNote = result.data.createNote;
+      const updatedNotes = [newNote, ...notes];
+      this.setState({ notes: updatedNotes, note: '' });
+    }
+  };
+  handleUpdateNote = async () => {
+    const { notes, id, note } = this.state;
+    const input = { id, note };
     const result = await API.graphql(
-      graphqlOperation(createNote, { input: input })
+      graphqlOperation(updateNote, { input: input })
     );
-    const newNote = result.data.createNote;
-    const updatedNotes = [newNote, ...notes];
-    this.setState({ notes: updatedNotes, note: '' });
+    const updatedNote = result.data.updateNote;
+    const index = notes.findIndex(note => note.id === updatedNote.id);
+    /* const updatedNotes = [
+      ...notes.slice(0, index),
+      updatedNote,
+      ...notes.slice(index + 1)
+    ]; */
+    const updatedNotes = notes;
+    updatedNotes.splice(index, 1, updatedNote);
+    this.setState({ notes: updatedNotes, note: '', id: '' });
+  };
+  handleSetNote = ({ note, id }) => {
+    this.setState({ note: note, id: id });
+  };
+  handleDeleteNote = async noteId => {
+    const { notes } = this.state;
+    const input = { id: noteId };
+    const result = await API.graphql(
+      graphqlOperation(deleteNote, { input: input })
+    );
+    const deletedNoteId = result.data.deleteNote.id;
+    const updatedNotes = notes.filter(note => note.id !== deletedNoteId);
+    this.setState({ notes: updatedNotes });
+  };
+  hasExistingNote = () => {
+    // Check if we have existing note to update, return true/false
+    const { notes, id } = this.state;
+    if (id) {
+      // is this the valid id?
+      const isNote = notes.findIndex(note => note.id === id) > -1;
+      return isNote;
+    }
+    return false;
   };
   render() {
-    const { note, notes } = this.state;
+    const { id, note, notes } = this.state;
 
     return (
       <div className="flex flex-column items-center justify-center pa3 bg-washed-red">
@@ -47,7 +94,7 @@ class App extends React.Component {
             value={note}
           />
           <button className="pa2 f4" type="submit">
-            Add Note
+            {id ? 'Update Note' : 'Add Note'}
           </button>
         </form>
 
@@ -55,8 +102,16 @@ class App extends React.Component {
         <div>
           {notes.map(item => (
             <div key={item.id} className="flex items-center">
-              <li className="list pa1 f3">{item.note}</li>
-              <button className="bg-transparent bn f4">
+              <li
+                className="list pa1 f3"
+                onClick={() => this.handleSetNote(item)}
+              >
+                {item.note}
+              </li>
+              <button
+                className="bg-transparent bn f4"
+                onClick={() => this.handleDeleteNote(item.id)}
+              >
                 <span>&times;</span>
               </button>
             </div>
